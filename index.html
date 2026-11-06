@@ -340,6 +340,22 @@ async function load() {
   const hlDown = ["perp", "spot", "ctx"].every((k) => errs.includes(k));
   $("#banner").innerHTML = hlDown
     ? '<div class="banner err">Non riesco a leggere Hyperliquid da questo browser. Controlla la connessione e premi Aggiorna.</div>' : "";
+  // Conto vuoto e senza storico: spesso è stato incollato l'indirizzo dell'API wallet.
+  const empty = !hlDown && account().equity <= 0 && !(D.fills || []).length;
+  if (empty) {
+    let role = null; try { role = await info({type: "userRole", user: addr}); } catch {}
+    const master = role && role.role === "agent" && role.data && role.data.user;
+    if (master && validAddr(master) && master.toLowerCase() !== addr.toLowerCase()) {
+      S.addr = master; store.set("addr", master);
+      S.notice = `Avevi inserito l'indirizzo dell'API wallet (quello che firma gli ordini). Ora mostro il conto principale ${master.slice(0, 6)}…${master.slice(-4)}.`;
+      return load();
+    }
+    $("#banner").innerHTML = `<div class="banner err">Su questo indirizzo non c'è niente: nessun saldo e nessuna operazione.
+      Controlla che sia l'indirizzo del <b>conto principale</b> (in alto a destra su app.hyperliquid.xyz), non quello dell'API wallet,
+      e che la rete sia giusta. Lo cambi con l'ingranaggio.</div>`;
+  } else if (S.notice) {
+    $("#banner").innerHTML = `<div class="banner">${esc(S.notice)}</div>`; S.notice = "";
+  }
   render();
   $("#updChip .num").textContent = "aggiornato " + new Date().toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"});
 }
