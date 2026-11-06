@@ -235,6 +235,8 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
   <div class="field"><label for="addrSet">Indirizzo pubblico</label><input id="addrSet" spellcheck="false"></div>
   <div class="field"><label for="netSet">Rete</label>
     <select id="netSet"><option value="mainnet">Mainnet (soldi veri)</option><option value="testnet">Testnet (prova)</option></select></div>
+  <div class="field"><label for="modeSet">Tipo di conto</label>
+    <select id="modeSet"><option value="auto">Automatico</option><option value="unified">Unified (un unico saldo)</option><option value="standard">Standard (perp e spot separati)</option></select></div>
   <p class="sub">Suggerimento: aggiungi questa pagina alla schermata Home del telefono per aprirla come un'app.</p>
   <div class="row-btns" style="margin-top:16px">
     <button class="btn" id="saveSet">Salva</button>
@@ -328,6 +330,7 @@ async function load() {
     orders: info({type: "frontendOpenOrders", user: addr}),
     fills: info({type: "userFills", user: addr}),
     port: info({type: "portfolio", user: addr}),
+    abs: info({type: "userAbstraction", user: addr}),
     ctx: info({type: "metaAndAssetCtxs"}),
     fng: fearGreed(),
     ...Object.fromEntries(COINS.map((c) => ["c_" + c, dailyCloses(c)])),
@@ -374,8 +377,15 @@ function account() {
             stop: stopO ? +stopO.triggerPx : null};
   });
   const upnl = positions.reduce((a, p) => a + p.upnl, 0);
-  const unified = usdc > 0 && perpValue <= 0.01;
-  const equity = unified ? usdc + upnl : perpValue;
+  // Unified: un solo saldo USDC (nello spot) fa da margine ai perp; il lato perp mostra solo il margine usato.
+  const abs = JSON.stringify(D.abs ?? "").toLowerCase();
+  let unified;
+  if (S.mode === "unified") unified = true;
+  else if (S.mode === "standard") unified = false;
+  else if (/unified|portfolio/.test(abs)) unified = true;
+  else if (/disabled/.test(abs)) unified = false;
+  else unified = usdc > 0 && (perpValue <= 0.01 || usdc >= perpValue);
+  const equity = unified ? usdc + upnl : perpValue + usdc;
   const invested = positions.reduce((a, p) => a + (p.size > 0 ? p.value : 0), 0);
   return {equity, unified, usdc, perpValue, positions, invested, marks, cash: Math.max(equity - invested, 0)};
 }
@@ -564,11 +574,12 @@ $("#setupForm").addEventListener("submit", (e) => {
   S.addr = a; S.net = $("#netIn").value; store.set("addr", a); store.set("net", S.net); start();
 });
 $("#refreshBtn").addEventListener("click", () => S.addr && load());
-$("#settingsBtn").addEventListener("click", () => { $("#addrSet").value = S.addr; $("#netSet").value = S.net; $("#settings").showModal(); });
+$("#settingsBtn").addEventListener("click", () => { $("#addrSet").value = S.addr; $("#netSet").value = S.net; $("#modeSet").value = S.mode; $("#settings").showModal(); });
 $("#closeSet").addEventListener("click", () => $("#settings").close());
 $("#saveSet").addEventListener("click", () => {
   const a = $("#addrSet").value.trim(); if (!validAddr(a)) { $("#addrSet").focus(); return; }
-  S.addr = a; S.net = $("#netSet").value; store.set("addr", a); store.set("net", S.net); $("#settings").close(); start();
+  S.addr = a; S.net = $("#netSet").value; S.mode = $("#modeSet").value; store.set("addr", a); store.set("net", S.net); store.set("mode", S.mode);
+  $("#settings").close(); start();
 });
 $("#forgetSet").addEventListener("click", () => { store.del("addr"); location.hash = ""; location.reload(); });
 window.addEventListener("resize", () => { clearTimeout(S.rt); S.rt = setTimeout(renderCharts, 150); });
@@ -578,7 +589,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && S.
 applyTheme(store.get("theme", ""));
 const fromHash = decodeURIComponent(location.hash.slice(1));
 S.addr = validAddr(fromHash) ? fromHash : store.get("addr", "");
-S.net = store.get("net", "mainnet"); S.lev = +store.get("lev", "1") || 1; S.period = store.get("period", "month");
+S.net = store.get("net", "mainnet"); S.mode = store.get("mode", "auto"); S.lev = +store.get("lev", "1") || 1; S.period = store.get("period", "month");
 if (validAddr(S.addr)) { store.set("addr", S.addr); start(); } else { $("#setupView").hidden = false; setNetChip(); }
 </script>
 </body>
