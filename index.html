@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hyperliquid AI Trader</title>
+<meta name="description" content="Il tuo conto Hyperliquid e cosa vuole fare oggi la strategia Trend, in tempo reale.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f3f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1318" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111820'/%3E%3Cpath d='M6 21l6-6 5 4 9-10' stroke='%233987e5' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --raised:#f8f9fb; --ink:#111820; --ink2:#4b5664; --muted:#7c8794;
+  --line:#dfe4ea; --line2:#eef1f4; --gain:#2a78d6; --loss:#e34948; --gain-soft:#2a78d61f; --loss-soft:#e349481f;
+  --warn:#9a6700; --focus:#2a78d6; --shadow:0 1px 0 rgba(17,24,32,.04);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1318; --surface:#151c23; --raised:#1a222b; --ink:#e8edf2; --ink2:#a9b4c0; --muted:#7d8894;
+    --line:#26313c; --line2:#1d262f; --gain:#3987e5; --loss:#e2524f; --gain-soft:#3987e526; --loss-soft:#e2524f26;
+    --warn:#e3b341; --focus:#3987e5; --shadow:none; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1318; --surface:#151c23; --raised:#1a222b; --ink:#e8edf2; --ink2:#a9b4c0; --muted:#7d8894;
+  --line:#26313c; --line2:#1d262f; --gain:#3987e5; --loss:#e2524f; --gain-soft:#3987e526; --loss-soft:#e2524f26;
+  --warn:#e3b341; --focus:#3987e5; --shadow:none; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:400 15px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
+.num{font-variant-numeric:tabular-nums}
+a{color:inherit}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+.wrap{max-width:1120px;margin:0 auto;padding:16px 16px 48px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0 18px}
+@media (max-width:640px){#updChip{display:none}.brand .long{display:none}.tools{gap:6px}}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px}
+.brand svg{flex:none}
+.tools{display:flex;align-items:center;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;
+  padding:4px 10px;font-size:13px;color:var(--ink2);white-space:nowrap}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.chip.live .dot{background:var(--gain)}
+.chip.main .dot{background:var(--loss)}
+.icon-btn{width:36px;height:36px;display:inline-grid;place-items:center;border:1px solid var(--line);background:var(--surface);
+  border-radius:10px;cursor:pointer;color:var(--ink2)}
+.icon-btn:hover{color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(12,minmax(0,1fr))}
+.span-12{grid-column:span 12}.span-8{grid-column:span 8}.span-4{grid-column:span 4}.span-6{grid-column:span 6}
+@media (max-width:860px){.span-8,.span-4,.span-6{grid-column:span 12}}
+.pad{padding:18px 20px}
+h2{font-size:15px;font-weight:600;margin:0 0 2px}
+.sub{color:var(--ink2);font-size:13.5px;margin:0}
+.muted{color:var(--muted)}
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;padding:24px 24px 22px}
+.hero .value{font-size:clamp(40px,8vw,64px);font-weight:600;letter-spacing:-.025em;line-height:1}
+.hero .value small{font-size:.36em;font-weight:500;color:var(--ink2);letter-spacing:0;margin-left:6px}
+.hero .story{font-size:17px;line-height:1.45;color:var(--ink);max-width:46ch;margin:14px 0 0}
+.hero .side{text-align:right;display:grid;gap:4px;font-size:14px;color:var(--ink2)}
+.hero .side b{color:var(--ink);font-weight:600}
+.pos{color:var(--gain)}.neg{color:var(--loss)}
+@media (max-width:640px){.hero{grid-template-columns:1fr}.hero .side{text-align:left}}
+/* compass */
+.compass-row{display:grid;grid-template-columns:92px minmax(0,1fr) 150px;gap:16px;align-items:center;padding:14px 20px;border-top:1px solid var(--line2)}
+.compass-row:first-of-type{border-top:0}
+.coin{font-weight:600;font-size:17px}
+.coin small{display:block;font-weight:400;font-size:12.5px;color:var(--muted)}
+.horizons{display:flex;gap:6px;margin-bottom:9px}
+.hz{flex:1;min-width:0;border-radius:7px;padding:5px 8px;font-size:12.5px;border:1px solid var(--line);color:var(--ink2);
+  display:flex;justify-content:space-between;gap:6px}
+.hz.up{background:var(--gain-soft);border-color:transparent;color:var(--ink)}
+.hz.down{background:var(--loss-soft);border-color:transparent;color:var(--ink)}
+.bar{position:relative;height:10px;border-radius:6px;background:var(--line2);overflow:visible}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--gain);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.bar .mark{position:absolute;top:-4px;width:2px;height:18px;background:var(--ink);border-radius:2px;transition:left .6s}
+.weights{text-align:right;font-size:13px;color:var(--ink2)}
+.weights b{display:block;font-size:20px;font-weight:600;color:var(--ink)}
+@media (max-width:640px){.compass-row{grid-template-columns:1fr auto;}.compass-row .meter{grid-column:1/-1;order:3}}
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px 16px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line2)}
+.legend i{display:inline-block;width:12px;height:8px;border-radius:3px;margin-right:6px;vertical-align:0}
+/* chart */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;padding:2px;background:var(--raised)}
+.seg button{border:0;background:transparent;padding:4px 10px;border-radius:7px;cursor:pointer;color:var(--ink2);font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.chart{position:relative;height:240px;margin-top:10px}
+.chart svg{display:block;width:100%;height:100%}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--surface);font-size:12.5px;padding:6px 9px;border-radius:8px;
+  transform:translate(-50%,-115%);white-space:nowrap;opacity:0;transition:opacity .12s}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+/* gauge */
+.gauge{display:grid;place-items:center;padding:6px 0 0}
+.gauge .v{font-size:38px;font-weight:600;line-height:1;margin-top:-52px}
+.gauge .l{color:var(--ink2);font-size:14px;margin-top:4px}
+/* tables & lists */
+.rows{display:grid}
+.r{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 20px;border-top:1px solid var(--line2);font-size:14px}
+.r:first-child{border-top:0}
+.r .k{color:var(--ink2)}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{font-weight:500;color:var(--muted);text-align:left;padding:8px 20px;border-bottom:1px solid var(--line)}
+.tbl td{padding:9px 20px;border-bottom:1px solid var(--line2)}
+.tbl td.n,.tbl th.n{text-align:right}
+.tbl tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto}
+.mkt{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.mkt>div{padding:16px 20px;border-left:1px solid var(--line2)}
+.mkt>div:first-child{border-left:0}
+.mkt b{font-size:20px;font-weight:600;display:block}
+.mkt span{font-size:13px;color:var(--ink2)}
+@media (max-width:640px){.mkt{grid-template-columns:1fr}.mkt>div{border-left:0;border-top:1px solid var(--line2)}.mkt>div:first-child{border-top:0}}
+.stopbar{height:6px;border-radius:4px;background:var(--line2);margin-top:6px;position:relative}
+.stopbar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--gain)}
+.empty{padding:18px 20px;color:var(--ink2);font-size:14px}
+.banner{border-radius:12px;padding:12px 16px;font-size:14px;margin-bottom:14px;border:1px solid var(--line);background:var(--raised)}
+.banner.err{border-color:var(--loss);background:var(--loss-soft)}
+/* setup */
+.setup{max-width:560px;margin:40px auto;padding:28px}
+.setup h1{font-size:24px;margin:0 0 8px;font-weight:600}
+.field{display:grid;gap:6px;margin:18px 0}
+.field input,.field select{border:1px solid var(--line);background:var(--raised);border-radius:10px;padding:11px 12px}
+.btn{border:0;background:var(--ink);color:var(--surface);border-radius:10px;padding:11px 16px;font-weight:500;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row-btns{display:flex;gap:8px;flex-wrap:wrap}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);padding:22px;max-width:440px;width:calc(100% - 32px)}
+dialog::backdrop{background:rgba(5,8,12,.45)}
+.foot{margin-top:22px;color:var(--muted);font-size:12.5px;text-align:center}
+.skel{color:transparent!important;background:var(--line2);border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor" opacity=".09"/><path d="M6 21l6-6 5 4 9-10" stroke="var(--gain)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>HL <span class="long">AI </span>Trader</span>
+    </div>
+    <div class="tools">
+      <span class="chip" id="netChip"><span class="dot"></span><span>—</span></span>
+      <span class="chip live" id="updChip" title="Aggiornamento automatico ogni minuto"><span class="dot"></span><span class="num">—</span></span>
+      <button class="icon-btn" id="refreshBtn" aria-label="Aggiorna ora" title="Aggiorna ora">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" aria-label="Cambia tema chiaro/scuro" title="Tema chiaro/scuro">
+        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" aria-label="Impostazioni" title="Impostazioni">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+
+  <section id="setupView" class="card setup" hidden>
+    <h1>Collega il tuo conto</h1>
+    <p class="sub">Serve solo l'indirizzo <b>pubblico</b> del tuo wallet Hyperliquid (inizia con 0x). Nessuna chiave, nessuna password: la pagina legge i dati pubblici del conto e salva l'indirizzo solo in questo browser.</p>
+    <form id="setupForm">
+      <div class="field"><label for="addrIn">Indirizzo pubblico</label>
+        <input id="addrIn" autocomplete="off" spellcheck="false" placeholder="0x…" inputmode="text"></div>
+      <div class="field"><label for="netIn">Rete</label>
+        <select id="netIn"><option value="mainnet">Mainnet (soldi veri)</option><option value="testnet">Testnet (prova)</option></select></div>
+      <div class="row-btns"><button class="btn" type="submit">Apri la dashboard</button></div>
+      <p class="sub" id="setupErr" style="color:var(--loss);margin-top:10px"></p>
+    </form>
+  </section>
+
+  <main id="mainView" hidden>
+    <div class="grid">
+      <section class="card span-8 hero" aria-live="polite">
+        <div>
+          <div class="sub">Valore del conto</div>
+          <div class="value num" id="equity"><span class="skel">000,00</span></div>
+          <p class="story" id="story">Leggo il conto…</p>
+        </div>
+        <div class="side" id="heroSide"></div>
+      </section>
+
+      <section class="card span-4 pad">
+        <h2>Umore del mercato</h2>
+        <p class="sub">Fear &amp; Greed: 0 paura estrema, 100 euforia</p>
+        <div class="gauge" id="fng"><svg viewBox="0 0 220 124" width="220" height="124" aria-hidden="true"></svg><div class="v num">—</div><div class="l">—</div></div>
+        <div class="chart" style="height:56px;margin-top:8px" id="fngSpark"></div>
+      </section>
+
+      <section class="card span-12" aria-labelledby="compassTitle">
+        <div class="pad head" style="padding-bottom:8px">
+          <div><h2 id="compassTitle">Cosa vuole fare il bot oggi</h2>
+            <p class="sub" id="compassSub">Strategia Trend: orizzonti a 20, 60 e 120 giorni e volatilità a 30 giorni</p></div>
+          <div class="seg" role="group" aria-label="Leva" id="levSeg"></div>
+        </div>
+        <div id="compass"></div>
+        <div class="legend"><span><i style="background:var(--gain)"></i>quota obiettivo del bot</span>
+          <span><i style="background:var(--ink);width:3px"></i>quota che hai ora</span>
+          <span>Un orizzonte è "su" se il prezzo è sopra quello di N giorni fa</span></div>
+      </section>
+
+      <section class="card span-8 pad">
+        <div class="head"><div><h2>Andamento del conto</h2><p class="sub" id="pnlLine">—</p></div>
+          <div class="seg" role="group" aria-label="Periodo" id="periodSeg"></div></div>
+        <div class="chart" id="eqChart"></div>
+      </section>
+
+      <section class="card span-4">
+        <div class="pad" style="padding-bottom:6px"><h2>Posizioni aperte</h2><p class="sub">con lo stop di emergenza sull'exchange</p></div>
+        <div id="positions"></div>
+      </section>
+
+      <section class="card span-12">
+        <div class="mkt" id="market"></div>
+      </section>
+
+      <section class="card span-12">
+        <div class="pad head" style="padding-bottom:6px"><div><h2>Ultime operazioni</h2><p class="sub" id="fillsSub">—</p></div></div>
+        <div class="scroll"><table class="tbl" id="fills"></table></div>
+      </section>
+    </div>
+    <p class="foot">Dati pubblici letti in diretta da Hyperliquid · la pagina non può inviare ordini · non è consulenza finanziaria</p>
+  </main>
+</div>
+
+<dialog id="settings">
+  <h2 style="font-size:18px;margin-bottom:6px">Impostazioni</h2>
+  <p class="sub">Restano salvate solo in questo browser.</p>
+  <div class="field"><label for="addrSet">Indirizzo pubblico</label><input id="addrSet" spellcheck="false"></div>
+  <div class="field"><label for="netSet">Rete</label>
+    <select id="netSet"><option value="mainnet">Mainnet (soldi veri)</option><option value="testnet">Testnet (prova)</option></select></div>
+  <p class="sub">Suggerimento: aggiungi questa pagina alla schermata Home del telefono per aprirla come un'app.</p>
+  <div class="row-btns" style="margin-top:16px">
+    <button class="btn" id="saveSet">Salva</button>
+    <button class="btn ghost" id="forgetSet">Dimentica l'indirizzo</button>
+    <button class="btn ghost" id="closeSet">Chiudi</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+const API = {mainnet: "https://api.hyperliquid.xyz/info", testnet: "https://api.hyperliquid-testnet.xyz/info"};
+const COINS = ["BTC", "ETH", "SOL"];
+const LOOKBACKS = [20, 60, 120], VOL_TARGET = 0.40, VOL_WIN = 30;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("hlai:" + k); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("hlai:" + k, v); } catch {} },
+  del(k) { try { localStorage.removeItem("hlai:" + k); } catch {} },
+};
+const $ = (s) => document.querySelector(s);
+const S = { addr: "", net: "mainnet", lev: 1, period: "month", data: {}, timer: null };
+
+/* ---------- formattazione italiana ---------- */
+const nf = (d) => new Intl.NumberFormat("it-IT", {minimumFractionDigits: d, maximumFractionDigits: d});
+const fmt = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : nf(d).format(x);
+const signed = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + nf(d).format(Math.abs(x));
+const usd = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : fmt(x, d) + " $";
+const pct = (x, d = 1) => (x == null || !isFinite(x)) ? "—" : signed(x * 100, d) + "%";
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const tone = (x) => x > 0 ? "pos" : x < 0 ? "neg" : "";
+const ago = (ts) => { const m = Math.round((Date.now() - ts) / 60000); return m < 60 ? `${m} min fa` : m < 1440 ? `${Math.round(m / 60)} h fa` : `${Math.round(m / 1440)} g fa`; };
+
+/* ---------- tema ---------- */
+function applyTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  else document.documentElement.removeAttribute("data-theme");
+  const dark = currentDark();
+  $("#themeIcon").innerHTML = dark
+    ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'
+    : '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+  if (S.data.ready) renderCharts();
+}
+function currentDark() {
+  const a = document.documentElement.getAttribute("data-theme");
+  return a ? a === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+}
+$("#themeBtn").addEventListener("click", () => { const t = currentDark() ? "light" : "dark"; store.set("theme", t); applyTheme(t); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyTheme(store.get("theme", "")));
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- API ---------- */
+async function info(body, timeout = 12000) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const r = await fetch(API[S.net], {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), signal: ctl.signal});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+async function fearGreed() {
+  const r = await fetch("https://api.alternative.me/fng/?limit=30");
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const j = await r.json(); return (j.data || []).map((d) => ({v: +d.value, label: d.value_classification}));
+}
+
+/* ---------- strategia Trend (stesse regole del bot) ---------- */
+function trendFor(closes) {
+  const n = closes.length; if (n < Math.max(...LOOKBACKS) + VOL_WIN + 1) return null;
+  const last = closes[n - 1];
+  const ups = LOOKBACKS.map((L) => last / closes[n - 1 - L] - 1 > 0);
+  const rets = []; for (let i = n - VOL_WIN; i < n; i++) rets.push(closes[i] / closes[i - 1] - 1);
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const sd = Math.sqrt(rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (rets.length - 1));
+  const vol = sd * Math.sqrt(365);
+  const signal = ups.filter(Boolean).length / LOOKBACKS.length;
+  const exposure = Math.max(0, Math.min(1, signal * Math.min(1, VOL_TARGET / vol)));
+  return {ups, vol, signal, exposure, last};
+}
+async function dailyCloses(coin) {
+  const now = Date.now();
+  const raw = await info({type: "candleSnapshot", req: {coin, interval: "1d", startTime: now - 320 * 86400000, endTime: now}});
+  return (raw || []).filter((c) => +c.T < now).map((c) => +c.c);   // solo candele chiuse
+}
+
+/* ---------- caricamento ---------- */
+async function load() {
+  $("#updChip .num").textContent = "aggiorno…";
+  const addr = S.addr;
+  const jobs = {
+    perp: info({type: "clearinghouseState", user: addr}),
+    spot: info({type: "spotClearinghouseState", user: addr}),
+    orders: info({type: "frontendOpenOrders", user: addr}),
+    fills: info({type: "userFills", user: addr}),
+    port: info({type: "portfolio", user: addr}),
+    ctx: info({type: "metaAndAssetCtxs"}),
+    fng: fearGreed(),
+    ...Object.fromEntries(COINS.map((c) => ["c_" + c, dailyCloses(c)])),
+  };
+  const keys = Object.keys(jobs);
+  const res = await Promise.allSettled(Object.values(jobs));
+  const D = {}; const errs = [];
+  res.forEach((r, i) => { if (r.status === "fulfilled") D[keys[i]] = r.value; else errs.push(keys[i]); });
+  S.data = {...D, ready: true, errs, at: Date.now()};
+  const hlDown = ["perp", "spot", "ctx"].every((k) => errs.includes(k));
+  $("#banner").innerHTML = hlDown
+    ? '<div class="banner err">Non riesco a leggere Hyperliquid da questo browser. Controlla la connessione e premi Aggiorna.</div>' : "";
+  render();
+  $("#updChip .num").textContent = "aggiornato " + new Date().toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"});
+}
+
+/* ---------- calcoli sul conto ---------- */
+function account() {
+  const D = S.data, perp = D.perp || {}, spot = D.spot || {};
+  const perpValue = +(perp.marginSummary?.accountValue || 0);
+  const usdc = (spot.balances || []).filter((b) => b.coin === "USDC").reduce((a, b) => a + +b.total, 0);
+  const marks = {}; const ctx = D.ctx;
+  if (Array.isArray(ctx) && ctx.length === 2) ctx[0].universe.forEach((u, i) => { marks[u.name] = ctx[1][i]; });
+  const positions = (perp.assetPositions || []).map((ap) => ap.position).filter((p) => p && +p.szi !== 0).map((p) => {
+    const mark = +(marks[p.coin]?.markPx || p.entryPx);
+    const stopO = (D.orders || []).find((o) => o.coin === p.coin && o.isTrigger && /stop/i.test(o.orderType || ""));
+    return {coin: p.coin, size: +p.szi, entry: +p.entryPx, upnl: +p.unrealizedPnl, mark, value: Math.abs(+p.szi) * mark,
+            stop: stopO ? +stopO.triggerPx : null};
+  });
+  const upnl = positions.reduce((a, p) => a + p.upnl, 0);
+  const unified = usdc > 0 && perpValue <= 0.01;
+  const equity = unified ? usdc + upnl : perpValue;
+  const invested = positions.reduce((a, p) => a + (p.size > 0 ? p.value : 0), 0);
+  return {equity, unified, usdc, perpValue, positions, invested, marks, cash: Math.max(equity - invested, 0)};
+}
+function portfolioSeries(period) {
+  const P = S.data.port; if (!Array.isArray(P)) return [];
+  const map = Object.fromEntries(P);
+  const d = map[period] || map["perp" + period[0].toUpperCase() + period.slice(1)];
+  return (d?.accountValueHistory || []).map(([t, v]) => ({t: +t, v: +v})).filter((p) => isFinite(p.v));
+}
+function pnlFor(period) {
+  const P = S.data.port; if (!Array.isArray(P)) return null;
+  const d = Object.fromEntries(P)[period]; const h = d?.pnlHistory || [];
+  return h.length ? +h[h.length - 1][1] - +h[0][1] : null;
+}
+
+/* ---------- rendering ---------- */
+function render() {
+  const A = account(); S.acct = A;
+  // hero
+  $("#equity").innerHTML = `${fmt(A.equity)}<small>USD</small>`;
+  const share = A.equity > 0 ? A.invested / A.equity : 0;
+  const longs = A.positions.filter((p) => p.size > 0).map((p) => p.coin);
+  $("#story").textContent = A.equity <= 0
+    ? "Il conto è vuoto: deposita USDC su Hyperliquid e il bot inizierà a seguire la strategia."
+    : longs.length
+      ? `${fmt(share * 100, 0)}% del conto investito in ${longs.join(", ")}. Il resto, ${fmt(A.cash)} USDC, aspetta in cassa finché il trend non si rafforza.`
+      : `Il bot è tutto in cassa: ${fmt(A.cash)} USDC. Rientrerà quando il trend tornerà abbastanza forte.`;
+  const all = pnlFor("allTime"), day = pnlFor("day");
+  $("#heroSide").innerHTML = `
+    <div>Oggi <b class="num ${tone(day)}">${day == null ? "—" : signed(day) + " $"}</b></div>
+    <div>Da sempre <b class="num ${tone(all)}">${all == null ? "—" : signed(all) + " $"}</b></div>
+    <div>Conto <b>${A.unified ? "Unified" : "Standard"}</b></div>`;
+  renderCompass(A); renderPositions(A); renderMarket(A); renderFills(); renderCharts();
+}
+
+function renderCompass(A) {
+  const rows = COINS.map((c) => {
+    const closes = S.data["c_" + c]; const t = closes ? trendFor(closes) : null;
+    if (!t) return `<div class="compass-row"><div class="coin">${c}</div><div class="muted">dati non disponibili</div><div></div></div>`;
+    const target = t.exposure / COINS.length * S.lev;
+    const pos = A.positions.find((p) => p.coin === c && p.size > 0);
+    const have = A.equity > 0 && pos ? pos.value / A.equity : 0;
+    const scale = Math.max(1 / COINS.length * S.lev, 0.0001);
+    const hz = LOOKBACKS.map((L, i) => `<span class="hz ${t.ups[i] ? "up" : "down"}"><span>${L} giorni</span><span aria-label="${t.ups[i] ? "su" : "giù"}">${t.ups[i] ? "↑" : "↓"}</span></span>`).join("");
+    const verdict = t.signal === 0 ? "fuori dal mercato" : t.signal < 0.5 ? "trend debole" : t.signal < 1 ? "trend buono" : "trend pieno";
+    return `<div class="compass-row">
+      <div class="coin">${c}<small>${verdict}</small></div>
+      <div class="meter"><div class="horizons">${hz}</div>
+        <div class="bar" role="img" aria-label="Obiettivo ${fmt(target * 100, 1)}%, attuale ${fmt(have * 100, 1)}%">
+          <div class="fill" style="width:${Math.min(target / scale, 1) * 100}%"></div>
+          <div class="mark" style="left:calc(${Math.min(have / scale, 1) * 100}% - 1px)"></div></div></div>
+      <div class="weights"><b class="num">${fmt(target * 100, 1)}%</b>obiettivo · ora ${fmt(have * 100, 1)}%<br>
+        <span class="muted">volatilità ${fmt(t.vol * 100, 0)}%</span></div></div>`;
+  });
+  $("#compass").innerHTML = rows.join("");
+  $("#compassSub").textContent = `Strategia Trend a leva ${S.lev}x: orizzonti a 20, 60 e 120 giorni, volatilità a 30 giorni. Se scendono sotto il minimo di 10 $ per ordine, il bot non compra.`;
+}
+
+function renderPositions(A) {
+  if (!A.positions.length) { $("#positions").innerHTML = '<div class="empty">Nessuna posizione aperta: tutto in cassa.</div>'; return; }
+  $("#positions").innerHTML = '<div class="rows">' + A.positions.map((p) => {
+    const dist = p.stop ? (p.mark - p.stop) / p.mark : null;
+    return `<div class="r"><div><b>${p.coin}</b> <span class="muted">${p.size > 0 ? "long" : "short"} ${fmt(Math.abs(p.size), 5)}</span>
+      <div class="muted num" style="font-size:12.5px">ingresso ${fmt(p.entry, 2)} · ora ${fmt(p.mark, 2)}</div>
+      ${p.stop ? `<div class="muted" style="font-size:12.5px">stop a ${fmt(p.stop, 0)} (${fmt(dist * 100, 1)}% sotto il prezzo)</div>
+        <div class="stopbar" aria-hidden="true"><i style="width:${Math.min(Math.max(dist / 0.3, 0), 1) * 100}%"></i></div>`
+        : '<div class="neg" style="font-size:12.5px">⚠️ nessuno stop sull\'exchange</div>'}</div>
+      <div class="num" style="text-align:right"><b>${fmt(p.value)} $</b><div class="${tone(p.upnl)}" style="font-size:13px">${signed(p.upnl)} $</div></div></div>`;
+  }).join("") + "</div>";
+}
+
+function renderMarket(A) {
+  const ctx = A.marks;
+  $("#market").innerHTML = COINS.map((c) => {
+    const x = ctx[c]; if (!x) return `<div><b>${c}</b><span>—</span></div>`;
+    const mark = +x.markPx, prev = +x.prevDayPx, ch = prev ? mark / prev - 1 : null, apr = +x.funding * 24 * 365;
+    return `<div><span>${c}</span><b class="num">${fmt(mark, mark > 1000 ? 0 : 2)} $</b>
+      <span class="num"><span class="${tone(ch)}">${pct(ch)}</span> in 24 ore · funding ${pct(apr, 1)} annuo</span></div>`;
+  }).join("");
+}
+
+function renderFills() {
+  const F = (S.data.fills || []).slice(0, 12);
+  const all = S.data.fills || [];
+  const realized = all.reduce((a, f) => a + +f.closedPnl, 0), fees = all.reduce((a, f) => a + +(f.fee || 0), 0);
+  $("#fillsSub").textContent = all.length
+    ? `Realizzato ${signed(realized)} $ · commissioni ${fmt(fees)} $ su ${all.length} esecuzioni`
+    : "Ancora nessuna operazione su questo conto.";
+  if (!F.length) { $("#fills").innerHTML = ""; return; }
+  const dirIt = (d) => ({"Open Long": "Apre long", "Close Long": "Chiude long", "Open Short": "Apre short", "Close Short": "Chiude short"}[d] || d);
+  $("#fills").innerHTML = `<thead><tr><th>Quando</th><th>Asset</th><th>Operazione</th><th class="n">Prezzo</th><th class="n">Quantità</th><th class="n">Risultato</th></tr></thead><tbody>` +
+    F.map((f) => `<tr><td class="muted">${ago(+f.time)}</td><td><b>${esc(f.coin)}</b></td><td>${esc(dirIt(f.dir))}</td>
+      <td class="n num">${fmt(+f.px, 2)}</td><td class="n num">${fmt(+f.sz, 5)}</td>
+      <td class="n num ${tone(+f.closedPnl - +(f.fee || 0))}">${+f.closedPnl ? signed(+f.closedPnl - +(f.fee || 0)) + " $" : `<span class="muted">−${fmt(+(f.fee || 0), 3)} $ comm.</span>`}</td></tr>`).join("") + "</tbody>";
+}
+
+/* ---------- grafici SVG ---------- */
+function lineChart(el, pts, opts = {}) {
+  const box = el.getBoundingClientRect(); const W = Math.max(box.width, 200), H = Math.max(box.height, 40);
+  if (pts.length < 2) { el.innerHTML = `<div class="empty" style="padding:30px 0">${opts.empty || "Dati insufficienti per il grafico."}</div>`; return; }
+  const pad = opts.spark ? {l: 2, r: 2, t: 4, b: 4} : {l: 52, r: 12, t: 10, b: 26};
+  const xs = pts.map((p) => p.t), ys = pts.map((p) => p.v);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys); if (opts.domain) [y0, y1] = opts.domain;
+  if (y0 === y1) { y0 -= 1; y1 += 1; } const span = y1 - y0; if (!opts.domain) { y0 -= span * .08; y1 += span * .08; }
+  const X = (t) => pad.l + (t - xs[0]) / (xs[xs.length - 1] - xs[0] || 1) * (W - pad.l - pad.r);
+  const Y = (v) => pad.t + (1 - (v - y0) / (y1 - y0)) * (H - pad.t - pad.b);
+  const color = opts.color || cssVar("--gain");
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join("");
+  const area = `${d}L${X(xs[xs.length - 1]).toFixed(1)},${H - pad.b}L${X(xs[0]).toFixed(1)},${H - pad.b}Z`;
+  const gid = "g" + Math.random().toString(36).slice(2);
+  let axes = "";
+  if (!opts.spark) {
+    for (let i = 0; i <= 3; i++) { const v = y0 + (y1 - y0) * i / 3, y = Y(v);
+      axes += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y}" y2="${y}" stroke="${cssVar("--line2")}"/>` +
+              `<text x="${pad.l - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="${cssVar("--muted")}">${fmt(v, span < 10 ? 2 : 0)}</text>`; }
+    const fmtD = (t) => new Date(t).toLocaleDateString("it-IT", {day: "numeric", month: "short"});
+    [0, .5, 1].forEach((f) => { const t = xs[0] + (xs[xs.length - 1] - xs[0]) * f;
+      axes += `<text x="${X(t)}" y="${H - 6}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}" font-size="11" fill="${cssVar("--muted")}">${fmtD(t)}</text>`; });
+  }
+  (opts.refs || []).forEach((r) => { axes += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${Y(r)}" y2="${Y(r)}" stroke="${cssVar("--line")}" stroke-dasharray="3 4"/>`; });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${opts.label || "grafico"}">
+    <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".22"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    ${axes}<path d="${area}" fill="url(#${gid})"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <line class="xh" y1="${pad.t}" y2="${H - pad.b}" stroke="${cssVar("--muted")}" stroke-dasharray="2 3" opacity="0"/>
+    <circle class="dot" r="4.5" fill="${color}" stroke="${cssVar("--surface")}" stroke-width="2" opacity="0"/></svg><div class="tip num"></div>`;
+  if (opts.spark) return;
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip"), xh = el.querySelector(".xh"), dot = el.querySelector(".dot");
+  const move = (ev) => {
+    const r = svg.getBoundingClientRect(); const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+    const t = xs[0] + (x - pad.l) / (W - pad.l - pad.r) * (xs[xs.length - 1] - xs[0]);
+    let best = pts[0]; for (const p of pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    const px = X(best.t), py = Y(best.v);
+    xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("opacity", 1);
+    dot.setAttribute("cx", px); dot.setAttribute("cy", py); dot.setAttribute("opacity", 1);
+    tip.style.left = px / W * r.width + "px"; tip.style.top = py / H * r.height + "px"; tip.style.opacity = 1;
+    tip.textContent = `${fmt(best.v)} $ · ${new Date(best.t).toLocaleString("it-IT", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})}`;
+  };
+  const hide = () => { tip.style.opacity = 0; xh.setAttribute("opacity", 0); dot.setAttribute("opacity", 0); };
+  svg.addEventListener("pointermove", move); svg.addEventListener("pointerleave", hide); svg.addEventListener("touchmove", move, {passive: true});
+}
+
+function renderCharts() {
+  if (!S.data.ready) return;
+  const series = portfolioSeries(S.period);
+  lineChart($("#eqChart"), series, {label: "Valore del conto nel tempo", empty: "Lo storico comparirà dopo qualche ora di attività del conto."});
+  const pnl = pnlFor(S.period);
+  const names = {day: "nelle ultime 24 ore", week: "in una settimana", month: "in un mese", allTime: "da sempre"};
+  $("#pnlLine").innerHTML = pnl == null ? "—" : `Risultato ${names[S.period]}: <b class="num ${tone(pnl)}">${signed(pnl)} $</b>`;
+  // fear & greed
+  const F = S.data.fng;
+  const g = $("#fng svg");
+  if (Array.isArray(F) && F.length) {
+    const v = F[0].v; const a = Math.PI * (1 - v / 100); const cx = 110, cy = 112, R = 92;
+    const arc = (from, to, col) => { const p = (t) => [cx + R * Math.cos(Math.PI * (1 - t)), cy - R * Math.sin(Math.PI * (1 - t))];
+      const [x0, y0] = p(from), [x1, y1] = p(to); return `<path d="M${x0},${y0} A${R},${R} 0 0 1 ${x1},${y1}" stroke="${col}" stroke-width="14" fill="none" stroke-linecap="butt"/>`; };
+    g.innerHTML = arc(0, .249, cssVar("--loss")) + arc(.251, .749, cssVar("--line")) + arc(.751, 1, cssVar("--gain")) +
+      `<circle cx="${cx + R * Math.cos(a)}" cy="${cy - R * Math.sin(a)}" r="10" fill="${cssVar("--surface")}" stroke="${cssVar("--ink")}" stroke-width="3"/>`;
+    const labels = {"Extreme Fear": "Paura estrema", "Fear": "Paura", "Neutral": "Neutrale", "Greed": "Avidità", "Extreme Greed": "Euforia"};
+    $("#fng .v").textContent = v; $("#fng .l").textContent = `${labels[F[0].label] || F[0].label} · una settimana fa ${F[7]?.v ?? "—"}`;
+    const hist = F.slice().reverse().map((d, i) => ({t: i, v: d.v}));
+    lineChart($("#fngSpark"), hist, {spark: true, domain: [0, 100], refs: [25, 75], color: cssVar("--ink2"), label: "Fear & Greed ultimi 30 giorni"});
+  } else { $("#fng .v").textContent = "—"; $("#fng .l").textContent = "non disponibile ora"; }
+}
+
+/* ---------- controlli ---------- */
+function segmented(el, items, current, onPick) {
+  el.innerHTML = items.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join("");
+  el.onclick = (e) => { const b = e.target.closest("button"); if (!b) return; [...el.children].forEach((x) => x.setAttribute("aria-pressed", x === b)); onPick(b.dataset.v); };
+}
+function setNetChip() {
+  $("#netChip").className = "chip " + (S.net === "mainnet" ? "main" : "");
+  $("#netChip span:last-child").textContent = S.net === "mainnet" ? "Mainnet" : "Testnet";
+}
+const validAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a);
+function start() {
+  setNetChip();
+  $("#setupView").hidden = true; $("#mainView").hidden = false;
+  segmented($("#periodSeg"), [["day", "24 ore"], ["week", "7 giorni"], ["month", "30 giorni"], ["allTime", "Tutto"]], S.period,
+    (v) => { S.period = v; store.set("period", v); renderCharts(); });
+  segmented($("#levSeg"), [[1, "1x"], [2, "2x"], [3, "3x"]], S.lev, (v) => { S.lev = +v; store.set("lev", v); render(); });
+  load(); clearInterval(S.timer); S.timer = setInterval(() => { if (!document.hidden) load(); }, 60000);
+}
+$("#setupForm").addEventListener("submit", (e) => {
+  e.preventDefault(); const a = $("#addrIn").value.trim();
+  if (!validAddr(a)) { $("#setupErr").textContent = "L'indirizzo deve iniziare con 0x ed essere lungo 42 caratteri."; return; }
+  S.addr = a; S.net = $("#netIn").value; store.set("addr", a); store.set("net", S.net); start();
+});
+$("#refreshBtn").addEventListener("click", () => S.addr && load());
+$("#settingsBtn").addEventListener("click", () => { $("#addrSet").value = S.addr; $("#netSet").value = S.net; $("#settings").showModal(); });
+$("#closeSet").addEventListener("click", () => $("#settings").close());
+$("#saveSet").addEventListener("click", () => {
+  const a = $("#addrSet").value.trim(); if (!validAddr(a)) { $("#addrSet").focus(); return; }
+  S.addr = a; S.net = $("#netSet").value; store.set("addr", a); store.set("net", S.net); $("#settings").close(); start();
+});
+$("#forgetSet").addEventListener("click", () => { store.del("addr"); location.hash = ""; location.reload(); });
+window.addEventListener("resize", () => { clearTimeout(S.rt); S.rt = setTimeout(renderCharts, 150); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && S.addr && Date.now() - (S.data.at || 0) > 60000) load(); });
+
+/* ---------- avvio ---------- */
+applyTheme(store.get("theme", ""));
+const fromHash = decodeURIComponent(location.hash.slice(1));
+S.addr = validAddr(fromHash) ? fromHash : store.get("addr", "");
+S.net = store.get("net", "mainnet"); S.lev = +store.get("lev", "1") || 1; S.period = store.get("period", "month");
+if (validAddr(S.addr)) { store.set("addr", S.addr); start(); } else { $("#setupView").hidden = false; setNetChip(); }
+</script>
+</body>
+</html>
