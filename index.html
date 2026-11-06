@@ -225,7 +225,7 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
         <div class="scroll"><table class="tbl" id="fills"></table></div>
       </section>
     </div>
-    <p class="foot">Dati pubblici letti in diretta da Hyperliquid · la pagina non può inviare ordini · non è consulenza finanziaria</p>
+    <p class="foot">Versione 6/11 v3 · Dati pubblici letti in diretta da Hyperliquid · la pagina non può inviare ordini · non è consulenza finanziaria</p>
   </main>
 </div>
 
@@ -238,6 +238,8 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
   <div class="field"><label for="modeSet">Tipo di conto</label>
     <select id="modeSet"><option value="auto">Automatico</option><option value="unified">Unified (un unico saldo)</option><option value="standard">Standard (perp e spot separati)</option></select></div>
   <p class="sub">Suggerimento: aggiungi questa pagina alla schermata Home del telefono per aprirla come un'app.</p>
+  <details style="margin-top:12px"><summary class="sub" style="cursor:pointer">Diagnostica (solo dati pubblici, puoi mandarla in chat)</summary>
+    <pre id="diag" class="num" style="white-space:pre-wrap;font-size:12px;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:220px;overflow:auto"></pre></details>
   <div class="row-btns" style="margin-top:16px">
     <button class="btn" id="saveSet">Salva</button>
     <button class="btn ghost" id="forgetSet">Dimentica l'indirizzo</button>
@@ -331,6 +333,7 @@ async function load() {
     fills: info({type: "userFills", user: addr}),
     port: info({type: "portfolio", user: addr}),
     abs: info({type: "userAbstraction", user: addr}),
+    spotCtx: info({type: "spotMetaAndAssetCtxs"}),
     ctx: info({type: "metaAndAssetCtxs"}),
     fng: fearGreed(),
     ...Object.fromEntries(COINS.map((c) => ["c_" + c, dailyCloses(c)])),
@@ -364,10 +367,33 @@ async function load() {
 }
 
 /* ---------- calcoli sul conto ---------- */
+const TOKEN_NAMES = {UBTC: "BTC", UETH: "ETH", USOL: "SOL", UFART: "FARTCOIN"};
+const niceToken = (c) => TOKEN_NAMES[c] || c;
+function spotPrices() {
+  const out = {byToken: {}, pairName: {}}; const sc = S.data.spotCtx;
+  if (!Array.isArray(sc) || sc.length !== 2) return out;
+  const tokens = sc[0].tokens || [], uni = sc[0].universe || [], ctxs = sc[1] || [];
+  const tName = Object.fromEntries(tokens.map((t) => [t.index, t.name]));
+  uni.forEach((u, i) => {
+    const [base, quote] = u.tokens || [];
+    const c = ctxs.find((x) => x.coin === u.name) || ctxs[i] || {};
+    const mark = +(c.markPx || c.midPx || 0);
+    out.pairName[u.name] = `${niceToken(tName[base] || u.name)} spot`;
+    if (quote === 0 && mark > 0 && out.byToken[base] == null) out.byToken[base] = mark;
+  });
+  return out;
+}
 function account() {
   const D = S.data, perp = D.perp || {}, spot = D.spot || {};
   const perpValue = +(perp.marginSummary?.accountValue || 0);
-  const usdc = (spot.balances || []).filter((b) => b.coin === "USDC").reduce((a, b) => a + +b.total, 0);
+  const usdcBal = (spot.balances || []).filter((b) => b.coin === "USDC");
+  const usdc = usdcBal.reduce((a, b) => a + +b.total, 0), usdcHold = usdcBal.reduce((a, b) => a + +(b.hold || 0), 0);
+  const px = spotPrices();
+  const holdings = (spot.balances || []).filter((b) => b.coin !== "USDC" && +b.total > 0).map((b) => {
+    const price = px.byToken[b.token] ?? null;
+    return {coin: b.coin, name: niceToken(b.coin), amount: +b.total, price, value: price == null ? null : +b.total * price};
+  });
+  const spotOther = holdings.reduce((a, h) => a + (h.value || 0), 0);
   const marks = {}; const ctx = D.ctx;
   if (Array.isArray(ctx) && ctx.length === 2) ctx[0].universe.forEach((u, i) => { marks[u.name] = ctx[1][i]; });
   const positions = (perp.assetPositions || []).map((ap) => ap.position).filter((p) => p && +p.szi !== 0).map((p) => {
@@ -385,9 +411,22 @@ function account() {
   else if (/unified|portfolio/.test(abs)) unified = true;
   else if (/disabled/.test(abs)) unified = false;
   else unified = usdc > 0 && (perpValue <= 0.01 || usdc >= perpValue);
-  const equity = unified ? usdc + upnl : perpValue + usdc;
+  // Capitale del bot: solo gli USDC (e il PnL dei perp) possono fare da margine.
+  const botCapital = unified ? usdc + upnl : perpValue;
+  const equity = botCapital + spotOther + (unified ? 0 : usdc);
   const invested = positions.reduce((a, p) => a + (p.size > 0 ? p.value : 0), 0);
-  return {equity, unified, usdc, perpValue, positions, invested, marks, cash: Math.max(equity - invested, 0)};
+  const cash = unified ? Math.max(usdc - usdcHold, 0) : usdc + Math.max(perpValue - invested, 0);
+  return {equity, botCapital, unified, usdc, usdcHold, perpValue, upnl, positions, invested, marks, holdings, spotOther, cash};
+}
+const VERSION = "2026-11-06 v3";
+function diagnostics(A) {
+  const D = S.data;
+  return [`versione pagina: ${VERSION}`, `tipo conto (Hyperliquid): ${JSON.stringify(D.abs ?? "n/d")} · impostato: ${S.mode}`,
+    `perp accountValue: ${fmt(A.perpValue)} · PnL aperto: ${fmt(A.upnl)}`,
+    `USDC spot: ${fmt(A.usdc)} (bloccati come margine ${fmt(A.usdcHold)})`,
+    ...A.holdings.map((h) => `${h.coin}: ${fmt(h.amount, 6)} × ${h.price == null ? "prezzo n/d" : fmt(h.price)} = ${h.value == null ? "n/d" : fmt(h.value)} $`),
+    `posizioni perp: ${A.positions.map((p) => `${p.coin} ${p.size} (${fmt(p.value)} $)`).join(", ") || "nessuna"}`,
+    `capitale bot: ${fmt(A.botCapital)} · totale: ${fmt(A.equity)}`, `errori: ${(D.errs || []).join(", ") || "nessuno"}`].join("\n");
 }
 function portfolioSeries(period) {
   const P = S.data.port; if (!Array.isArray(P)) return [];
@@ -406,18 +445,21 @@ function render() {
   const A = account(); S.acct = A;
   // hero
   $("#equity").innerHTML = `${fmt(A.equity)}<small>USD</small>`;
-  const share = A.equity > 0 ? A.invested / A.equity : 0;
-  const longs = A.positions.filter((p) => p.size > 0).map((p) => p.coin);
+  const longs = A.positions.filter((p) => p.size > 0);
+  const parts = [];
+  if (longs.length) parts.push(`${longs.map((p) => `${fmt(p.value)} $ in ${p.coin}`).join(", ")} gestiti dal bot`);
+  A.holdings.forEach((h) => parts.push(h.value == null ? `${fmt(h.amount, 5)} ${h.name} spot` : `${fmt(h.value)} $ in ${h.name} spot (tuoi, il bot non li tocca)`));
+  parts.push(`${fmt(A.cash)} USDC liberi`);
   $("#story").textContent = A.equity <= 0
     ? "Il conto è vuoto: deposita USDC su Hyperliquid e il bot inizierà a seguire la strategia."
-    : longs.length
-      ? `${fmt(share * 100, 0)}% del conto investito in ${longs.join(", ")}. Il resto, ${fmt(A.cash)} USDC, aspetta in cassa finché il trend non si rafforza.`
-      : `Il bot è tutto in cassa: ${fmt(A.cash)} USDC. Rientrerà quando il trend tornerà abbastanza forte.`;
+    : parts.join(" · ") + ".";
   const all = pnlFor("allTime"), day = pnlFor("day");
   $("#heroSide").innerHTML = `
     <div>Oggi <b class="num ${tone(day)}">${day == null ? "—" : signed(day) + " $"}</b></div>
     <div>Da sempre <b class="num ${tone(all)}">${all == null ? "—" : signed(all) + " $"}</b></div>
+    <div>Capitale del bot <b class="num">${fmt(A.botCapital)} $</b></div>
     <div>Conto <b>${A.unified ? "Unified" : "Standard"}</b></div>`;
+  $("#diag").textContent = diagnostics(A);
   renderCompass(A); renderPositions(A); renderMarket(A); renderFills(); renderCharts();
 }
 
@@ -427,7 +469,7 @@ function renderCompass(A) {
     if (!t) return `<div class="compass-row"><div class="coin">${c}</div><div class="muted">dati non disponibili</div><div></div></div>`;
     const target = t.exposure / COINS.length * S.lev;
     const pos = A.positions.find((p) => p.coin === c && p.size > 0);
-    const have = A.equity > 0 && pos ? pos.value / A.equity : 0;
+    const have = A.botCapital > 0 && pos ? pos.value / A.botCapital : 0;
     const scale = Math.max(1 / COINS.length * S.lev, 0.0001);
     const hz = LOOKBACKS.map((L, i) => `<span class="hz ${t.ups[i] ? "up" : "down"}"><span>${L} giorni</span><span aria-label="${t.ups[i] ? "su" : "giù"}">${t.ups[i] ? "↑" : "↓"}</span></span>`).join("");
     const verdict = t.signal === 0 ? "fuori dal mercato" : t.signal < 0.5 ? "trend debole" : t.signal < 1 ? "trend buono" : "trend pieno";
@@ -467,6 +509,7 @@ function renderMarket(A) {
   }).join("");
 }
 
+function coinName(c) { return c && c[0] === "@" ? (spotPrices().pairName[c] || c + " spot") : /\//.test(c || "") ? niceToken(c.split("/")[0]) + " spot" : c; }
 function renderFills() {
   const F = (S.data.fills || []).slice(0, 12);
   const all = S.data.fills || [];
@@ -477,7 +520,7 @@ function renderFills() {
   if (!F.length) { $("#fills").innerHTML = ""; return; }
   const dirIt = (d) => ({"Open Long": "Apre long", "Close Long": "Chiude long", "Open Short": "Apre short", "Close Short": "Chiude short"}[d] || d);
   $("#fills").innerHTML = `<thead><tr><th>Quando</th><th>Asset</th><th>Operazione</th><th class="n">Prezzo</th><th class="n">Quantità</th><th class="n">Risultato</th></tr></thead><tbody>` +
-    F.map((f) => `<tr><td class="muted">${ago(+f.time)}</td><td><b>${esc(f.coin)}</b></td><td>${esc(dirIt(f.dir))}</td>
+    F.map((f) => `<tr><td class="muted">${ago(+f.time)}</td><td><b>${esc(coinName(f.coin))}</b></td><td>${esc(dirIt(f.dir))}</td>
       <td class="n num">${fmt(+f.px, 2)}</td><td class="n num">${fmt(+f.sz, 5)}</td>
       <td class="n num ${tone(+f.closedPnl - +(f.fee || 0))}">${+f.closedPnl ? signed(+f.closedPnl - +(f.fee || 0)) + " $" : `<span class="muted">−${fmt(+(f.fee || 0), 3)} $ comm.</span>`}</td></tr>`).join("") + "</tbody>";
 }
