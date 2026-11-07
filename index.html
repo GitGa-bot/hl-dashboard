@@ -148,6 +148,7 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
     <div class="tools">
       <span class="chip" id="netChip"><span class="dot"></span><span>—</span></span>
       <span class="chip live" id="updChip" title="Aggiornamento automatico ogni minuto"><span class="dot"></span><span class="num">—</span></span>
+      <button class="chip" id="curBtn" type="button" title="Mostra gli importi in dollari o in euro" aria-label="Cambia valuta" style="cursor:pointer;font:inherit"><span>$ USD</span></button>
       <button class="icon-btn" id="refreshBtn" aria-label="Aggiorna ora" title="Aggiorna ora">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
       </button>
@@ -225,7 +226,7 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
         <div class="scroll"><table class="tbl" id="fills"></table></div>
       </section>
     </div>
-    <p class="foot">Versione 7/11 v4 · Dati pubblici letti in diretta da Hyperliquid · la pagina non può inviare ordini · non è consulenza finanziaria</p>
+    <p class="foot">Versione 7/11 v5 · Dati pubblici letti in diretta da Hyperliquid · la pagina non può inviare ordini · non è consulenza finanziaria</p>
   </main>
 </div>
 
@@ -261,13 +262,29 @@ const store = {
   del(k) { try { localStorage.removeItem("hlai:" + k); } catch {} },
 };
 const $ = (s) => document.querySelector(s);
-const S = { addr: "", net: "mainnet", lev: 1, period: "month", since: "bot", data: {}, timer: null };
+const S = { addr: "", net: "mainnet", lev: 1, period: "month", since: "bot", cur: "USD", fx: null, data: {}, timer: null };
 
 /* ---------- formattazione italiana ---------- */
 const nf = (d) => new Intl.NumberFormat("it-IT", {minimumFractionDigits: d, maximumFractionDigits: d});
 const fmt = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : nf(d).format(x);
 const signed = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + nf(d).format(Math.abs(x));
 const usd = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : fmt(x, d) + " $";
+/* Valuta: Hyperliquid lavora in dollari; in modalità euro converto solo i TUOI importi (saldo, risultati, commissioni) col cambio BCE del giorno. */
+const CUR = () => (S.cur === "EUR" && S.fx > 0) ? "€" : "$";
+const K = () => CUR() === "€" ? S.fx : 1;
+const mo = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : fmt(x * K(), d);
+const mos = (x, d = 2) => (x == null || !isFinite(x)) ? "—" : signed(x * K(), d);
+async function fetchFx() {
+  try { const c = JSON.parse(store.get("fx", "null")); if (c && c.r > 0 && Date.now() - c.t < 6 * 3600e3) return c.r; } catch {}
+  const srcs = [["https://api.frankfurter.app/latest?from=USD&to=EUR", (j) => j?.rates?.EUR], ["https://open.er-api.com/v6/latest/USD", (j) => j?.rates?.EUR]];
+  for (const [u, pick] of srcs) {
+    try { const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 6000);
+      const r = await fetch(u, {signal: ac.signal}); clearTimeout(to); const v = +pick(await r.json());
+      if (v > 0.3 && v < 3) { store.set("fx", JSON.stringify({r: v, t: Date.now()})); return v; } } catch {}
+  }
+  try { const c = JSON.parse(store.get("fx", "null")); if (c && c.r > 0) return c.r; } catch {}
+  return null;
+}
 const pct = (x, d = 1) => (x == null || !isFinite(x)) ? "—" : signed(x * 100, d) + "%";
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const tone = (x) => x > 0 ? "pos" : x < 0 ? "neg" : "";
@@ -339,12 +356,14 @@ async function load() {
     spotCtx: info({type: "spotMetaAndAssetCtxs"}),
     ctx: info({type: "metaAndAssetCtxs"}),
     fng: fearGreed(),
+    fx: fetchFx(),
     ...Object.fromEntries(COINS.map((c) => ["c_" + c, dailyCloses(c)])),
   };
   const keys = Object.keys(jobs);
   const res = await Promise.allSettled(Object.values(jobs));
   const D = {}; const errs = [];
   res.forEach((r, i) => { if (r.status === "fulfilled") D[keys[i]] = r.value; else errs.push(keys[i]); });
+  S.fx = D.fx || S.fx; delete D.fx;
   S.data = {...D, ready: true, errs, at: Date.now()};
   const hlDown = ["perp", "spot", "ctx"].every((k) => errs.includes(k));
   $("#banner").innerHTML = hlDown
@@ -421,7 +440,7 @@ function account() {
   const cash = unified ? Math.max(usdc - usdcHold, 0) : usdc + Math.max(perpValue - invested, 0);
   return {equity, botCapital, unified, usdc, usdcHold, perpValue, upnl, positions, invested, marks, holdings, spotOther, cash};
 }
-const VERSION = "2026-11-07 v4";
+const VERSION = "2026-11-07 v5";
 function diagnostics(A) {
   const D = S.data;
   return [`versione pagina: ${VERSION}`, `tipo conto (Hyperliquid): ${JSON.stringify(D.abs ?? "n/d")} · impostato: ${S.mode}`,
@@ -470,20 +489,21 @@ function pnlFor(period) {
 function render() {
   const A = account(); S.acct = A;
   // hero
-  $("#equity").innerHTML = `${fmt(A.equity)}<small>USD</small>`;
+  $("#equity").innerHTML = `${mo(A.equity)}<small>${CUR() === "€" ? "EUR" : "USD"}</small>`;
+  $("#curBtn span").textContent = CUR() === "€" ? "€ EUR" : (S.cur === "EUR" ? "$ USD (cambio n/d)" : "$ USD");
   const longs = A.positions.filter((p) => p.size > 0);
   const parts = [];
-  if (longs.length) parts.push(`${longs.map((p) => `${fmt(p.value)} $ in ${p.coin}`).join(", ")} gestiti dal bot`);
-  A.holdings.forEach((h) => parts.push(h.value == null ? `${fmt(h.amount, 5)} ${h.name} spot` : `${fmt(h.value)} $ in ${h.name} spot (tuoi, il bot non li tocca)`));
-  parts.push(`${fmt(A.cash)} USDC liberi`);
+  if (longs.length) parts.push(`${longs.map((p) => `${mo(p.value)} ${CUR()} in ${p.coin}`).join(", ")} gestiti dal bot`);
+  A.holdings.forEach((h) => parts.push(h.value == null ? `${fmt(h.amount, 5)} ${h.name} spot` : `${mo(h.value)} ${CUR()} in ${h.name} spot (tuoi, il bot non li tocca)`));
+  parts.push(CUR() === "€" ? `${mo(A.cash)} € liberi (in USDC)` : `${mo(A.cash)} USDC liberi`);
   $("#story").textContent = A.equity <= 0
     ? "Il conto è vuoto: deposita USDC su Hyperliquid e il bot inizierà a seguire la strategia."
     : parts.join(" · ") + ".";
   const all = pnlFor("allTime"), day = pnlFor("day"), si = sinceInfo();
   $("#heroSide").innerHTML = `
-    <div>Oggi <b class="num ${tone(day)}">${day == null ? "—" : signed(day) + " $"}</b></div>
-    <div title="Risultato del bot: operazioni, commissioni, funding e PnL aperto. Versamenti e acquisti spot esclusi.">${si.short} <b class="num ${tone(all)}">${all == null ? "—" : signed(all) + " $"}</b></div>
-    <div>Capitale del bot <b class="num">${fmt(A.botCapital)} $</b></div>
+    <div>Oggi <b class="num ${tone(day)}">${day == null ? "—" : mos(day) + " " + CUR()}</b></div>
+    <div title="Risultato del bot: operazioni, commissioni, funding e PnL aperto. Versamenti e acquisti spot esclusi.">${si.short} <b class="num ${tone(all)}">${all == null ? "—" : mos(all) + " " + CUR()}</b></div>
+    <div>Capitale del bot <b class="num">${mo(A.botCapital)} ${CUR()}</b></div>
     <div>Conto <b>${A.unified ? "Unified" : "Standard"}</b></div>`;
   $("#diag").textContent = diagnostics(A);
   renderCompass(A); renderPositions(A); renderMarket(A); renderFills(); renderCharts();
@@ -521,7 +541,7 @@ function renderPositions(A) {
       ${p.stop ? `<div class="muted" style="font-size:12.5px">stop a ${fmt(p.stop, 0)} (${fmt(dist * 100, 1)}% sotto il prezzo)</div>
         <div class="stopbar" aria-hidden="true"><i style="width:${Math.min(Math.max(dist / 0.3, 0), 1) * 100}%"></i></div>`
         : '<div class="neg" style="font-size:12.5px">⚠️ nessuno stop sull\'exchange</div>'}</div>
-      <div class="num" style="text-align:right"><b>${fmt(p.value)} $</b><div class="${tone(p.upnl)}" style="font-size:13px">${signed(p.upnl)} $</div></div></div>`;
+      <div class="num" style="text-align:right"><b>${mo(p.value)} ${CUR()}</b><div class="${tone(p.upnl)}" style="font-size:13px">${mos(p.upnl)} ${CUR()}</div></div></div>`;
   }).join("") + "</div>";
 }
 
@@ -542,7 +562,7 @@ function renderFills() {
   const F = all.slice(0, 12);
   const realized = all.reduce((a, f) => a + +f.closedPnl, 0), fees = all.reduce((a, f) => a + +(f.fee || 0), 0);
   $("#fillsSub").textContent = all.length
-    ? `${si.label[0].toUpperCase() + si.label.slice(1)} · realizzato ${signed(realized)} $ · commissioni ${fmt(fees)} $ su ${all.length} esecuzioni` +
+    ? `${si.label[0].toUpperCase() + si.label.slice(1)} · realizzato ${mos(realized)} ${CUR()} · commissioni ${mo(fees)} ${CUR()} su ${all.length} esecuzioni` +
       (hidden > 0 ? ` · ${hidden} più vecchie nascoste (Impostazioni → Storia da mostrare)` : "")
     : `Nessuna operazione ${si.label}.` + (hidden > 0 ? ` ${hidden} più vecchie nascoste.` : "");
   if (!F.length) { $("#fills").innerHTML = ""; return; }
@@ -550,7 +570,7 @@ function renderFills() {
   $("#fills").innerHTML = `<thead><tr><th>Quando</th><th>Asset</th><th>Operazione</th><th class="n">Prezzo</th><th class="n">Quantità</th><th class="n">Risultato</th></tr></thead><tbody>` +
     F.map((f) => `<tr><td class="muted">${ago(+f.time)}</td><td><b>${esc(coinName(f.coin))}</b></td><td>${esc(dirIt(f.dir))}</td>
       <td class="n num">${fmt(+f.px, 2)}</td><td class="n num">${fmt(+f.sz, 5)}</td>
-      <td class="n num ${tone(+f.closedPnl - +(f.fee || 0))}">${+f.closedPnl ? signed(+f.closedPnl - +(f.fee || 0)) + " $" : `<span class="muted">−${fmt(+(f.fee || 0), 3)} $ comm.</span>`}</td></tr>`).join("") + "</tbody>";
+      <td class="n num ${tone(+f.closedPnl - +(f.fee || 0))}">${+f.closedPnl ? mos(+f.closedPnl - +(f.fee || 0)) + " " + CUR() : `<span class="muted">−${mo(+(f.fee || 0), 3)} ${CUR()} comm.</span>`}</td></tr>`).join("") + "</tbody>";
 }
 
 /* ---------- grafici SVG ---------- */
@@ -592,7 +612,7 @@ function lineChart(el, pts, opts = {}) {
     xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("opacity", 1);
     dot.setAttribute("cx", px); dot.setAttribute("cy", py); dot.setAttribute("opacity", 1);
     tip.style.left = px / W * r.width + "px"; tip.style.top = py / H * r.height + "px"; tip.style.opacity = 1;
-    tip.textContent = `${fmt(best.v)} $ · ${new Date(best.t).toLocaleString("it-IT", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})}`;
+    tip.textContent = `${fmt(best.v)} ${opts.cur || "$"} · ${new Date(best.t).toLocaleString("it-IT", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})}`;
   };
   const hide = () => { tip.style.opacity = 0; xh.setAttribute("opacity", 0); dot.setAttribute("opacity", 0); };
   svg.addEventListener("pointermove", move); svg.addEventListener("pointerleave", hide); svg.addEventListener("touchmove", move, {passive: true});
@@ -600,11 +620,11 @@ function lineChart(el, pts, opts = {}) {
 
 function renderCharts() {
   if (!S.data.ready) return;
-  const series = botSeries(S.period);
-  lineChart($("#eqChart"), series, {label: "Risultato del bot nel tempo", refs: [0], color: cssVar(series[series.length - 1].v < -0.005 ? "--loss" : series[series.length - 1].v > 0.005 ? "--gain" : "--ink2"), empty: "Il grafico parte con la prima operazione del bot."});
+  const series = botSeries(S.period).map((p) => ({t: p.t, v: p.v * K()}));
+  lineChart($("#eqChart"), series, {label: "Risultato del bot nel tempo", refs: [0], cur: CUR(), color: cssVar(series[series.length - 1].v < -0.005 ? "--loss" : series[series.length - 1].v > 0.005 ? "--gain" : "--ink2"), empty: "Il grafico parte con la prima operazione del bot."});
   const pnl = pnlFor(S.period);
   const names = {day: "nelle ultime 24 ore", week: "in 7 giorni", month: "in 30 giorni", allTime: sinceInfo().label};
-  $("#pnlLine").innerHTML = pnl == null ? "—" : `Risultato ${names[S.period]}: <b class="num ${tone(pnl)}">${signed(pnl)} $</b> · senza versamenti né acquisti spot`;
+  $("#pnlLine").innerHTML = pnl == null ? "—" : `Risultato ${names[S.period]}: <b class="num ${tone(pnl)}">${mos(pnl)} ${CUR()}</b> · senza versamenti né acquisti spot`;
   // fear & greed
   const F = S.data.fng;
   const g = $("#fng svg");
@@ -644,6 +664,7 @@ $("#setupForm").addEventListener("submit", (e) => {
   if (!validAddr(a)) { $("#setupErr").textContent = "L'indirizzo deve iniziare con 0x ed essere lungo 42 caratteri."; return; }
   S.addr = a; S.net = $("#netIn").value; store.set("addr", a); store.set("net", S.net); start();
 });
+$("#curBtn").addEventListener("click", () => { S.cur = S.cur === "EUR" ? "USD" : "EUR"; store.set("cur", S.cur); if (S.data.ready) render(); });
 $("#refreshBtn").addEventListener("click", () => S.addr && load());
 $("#settingsBtn").addEventListener("click", () => { $("#addrSet").value = S.addr; $("#netSet").value = S.net; $("#modeSet").value = S.mode; $("#sinceSet").value = S.since; $("#settings").showModal(); });
 $("#closeSet").addEventListener("click", () => $("#settings").close());
@@ -661,7 +682,7 @@ applyTheme(store.get("theme", ""));
 const fromHash = decodeURIComponent(location.hash.slice(1));
 S.addr = validAddr(fromHash) ? fromHash : store.get("addr", "");
 S.net = store.get("net", "mainnet"); S.mode = store.get("mode", "auto"); S.lev = +store.get("lev", "1") || 1; S.period = store.get("period", "month");
-S.since = store.get("since", "bot");
+S.since = store.get("since", "bot"); S.cur = store.get("cur", "USD");
 if (validAddr(S.addr)) { store.set("addr", S.addr); start(); } else { $("#setupView").hidden = false; setNetChip(); }
 </script>
 </body>
