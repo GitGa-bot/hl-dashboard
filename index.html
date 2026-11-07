@@ -206,7 +206,7 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
       </section>
 
       <section class="card span-8 pad">
-        <div class="head"><div><h2>Andamento del conto</h2><p class="sub" id="pnlLine">—</p></div>
+        <div class="head"><div><h2>Risultato del bot</h2><p class="sub" id="pnlLine">—</p></div>
           <div class="seg" role="group" aria-label="Periodo" id="periodSeg"></div></div>
         <div class="chart" id="eqChart"></div>
       </section>
@@ -225,7 +225,7 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
         <div class="scroll"><table class="tbl" id="fills"></table></div>
       </section>
     </div>
-    <p class="foot">Versione 6/11 v3 · Dati pubblici letti in diretta da Hyperliquid · la pagina non può inviare ordini · non è consulenza finanziaria</p>
+    <p class="foot">Versione 7/11 v4 · Dati pubblici letti in diretta da Hyperliquid · la pagina non può inviare ordini · non è consulenza finanziaria</p>
   </main>
 </div>
 
@@ -237,6 +237,9 @@ dialog::backdrop{background:rgba(5,8,12,.45)}
     <select id="netSet"><option value="mainnet">Mainnet (soldi veri)</option><option value="testnet">Testnet (prova)</option></select></div>
   <div class="field"><label for="modeSet">Tipo di conto</label>
     <select id="modeSet"><option value="auto">Automatico</option><option value="unified">Unified (un unico saldo)</option><option value="standard">Standard (perp e spot separati)</option></select></div>
+  <div class="field"><label for="sinceSet">Storia da mostrare</label>
+    <select id="sinceSet"><option value="bot">Dall'avvio del bot (consigliato)</option><option value="7">Ultimi 7 giorni</option><option value="30">Ultimi 30 giorni</option><option value="all">Tutto lo storico del conto</option></select></div>
+  <p class="sub">L'exchange non permette di cancellare lo storico: la pagina nasconde solo ciò che precede l'avvio del bot, che non c'entra con i suoi risultati.</p>
   <p class="sub">Suggerimento: aggiungi questa pagina alla schermata Home del telefono per aprirla come un'app.</p>
   <details style="margin-top:12px"><summary class="sub" style="cursor:pointer">Diagnostica (solo dati pubblici, puoi mandarla in chat)</summary>
     <pre id="diag" class="num" style="white-space:pre-wrap;font-size:12px;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:220px;overflow:auto"></pre></details>
@@ -258,7 +261,7 @@ const store = {
   del(k) { try { localStorage.removeItem("hlai:" + k); } catch {} },
 };
 const $ = (s) => document.querySelector(s);
-const S = { addr: "", net: "mainnet", lev: 1, period: "month", data: {}, timer: null };
+const S = { addr: "", net: "mainnet", lev: 1, period: "month", since: "bot", data: {}, timer: null };
 
 /* ---------- formattazione italiana ---------- */
 const nf = (d) => new Intl.NumberFormat("it-IT", {minimumFractionDigits: d, maximumFractionDigits: d});
@@ -331,7 +334,7 @@ async function load() {
     spot: info({type: "spotClearinghouseState", user: addr}),
     orders: info({type: "frontendOpenOrders", user: addr}),
     fills: info({type: "userFills", user: addr}),
-    port: info({type: "portfolio", user: addr}),
+    fund: info({type: "userFunding", user: addr, startTime: Date.now() - 120 * 86400000}),
     abs: info({type: "userAbstraction", user: addr}),
     spotCtx: info({type: "spotMetaAndAssetCtxs"}),
     ctx: info({type: "metaAndAssetCtxs"}),
@@ -418,7 +421,7 @@ function account() {
   const cash = unified ? Math.max(usdc - usdcHold, 0) : usdc + Math.max(perpValue - invested, 0);
   return {equity, botCapital, unified, usdc, usdcHold, perpValue, upnl, positions, invested, marks, holdings, spotOther, cash};
 }
-const VERSION = "2026-11-06 v3";
+const VERSION = "2026-11-07 v4";
 function diagnostics(A) {
   const D = S.data;
   return [`versione pagina: ${VERSION}`, `tipo conto (Hyperliquid): ${JSON.stringify(D.abs ?? "n/d")} · impostato: ${S.mode}`,
@@ -428,16 +431,39 @@ function diagnostics(A) {
     `posizioni perp: ${A.positions.map((p) => `${p.coin} ${p.size} (${fmt(p.value)} $)`).join(", ") || "nessuna"}`,
     `capitale bot: ${fmt(A.botCapital)} · totale: ${fmt(A.equity)}`, `errori: ${(D.errs || []).join(", ") || "nessuno"}`].join("\n");
 }
-function portfolioSeries(period) {
-  const P = S.data.port; if (!Array.isArray(P)) return [];
-  const map = Object.fromEntries(P);
-  const d = map[period] || map["perp" + period[0].toUpperCase() + period.slice(1)];
-  return (d?.accountValueHistory || []).map(([t, v]) => ({t: +t, v: +v})).filter((p) => isFinite(p.v));
+/* Storia "pulita": solo da quando c'è il bot, senza versamenti, trasferimenti e acquisti spot.
+   L'API portfolio di Hyperliquid per i conti Unified mescola questi movimenti (picchi, valori negativi): non la usiamo. */
+const isPerpFill = (f) => f.coin && f.coin[0] !== "@" && !/\//.test(f.coin);
+const shortDate = (ts) => new Date(ts).toLocaleDateString("it-IT", {day: "numeric", month: "short"});
+function sinceInfo() {
+  const now = Date.now();
+  if (S.since === "all") return {ts: 0, short: "Da sempre", label: "tutto lo storico"};
+  if (S.since === "7" || S.since === "30") return {ts: now - +S.since * 864e5, short: `Ultimi ${S.since} g`, label: `ultimi ${S.since} giorni`};
+  const bot = (S.data.fills || []).filter((f) => f.cloid).map((f) => +f.time);
+  if (bot.length) { const ts = Math.min(...bot); return {ts, short: `Dal ${shortDate(ts)}`, label: `dall'avvio del bot (${shortDate(ts)})`}; }
+  return {ts: now - 7 * 864e5, short: "Ultimi 7 g", label: "ultimi 7 giorni (nessuna operazione del bot riconoscibile)"};
+}
+function botEvents(sinceTs) {
+  const ev = [];
+  (S.data.fills || []).filter((f) => isPerpFill(f) && +f.time >= sinceTs).forEach((f) => ev.push({t: +f.time, v: +f.closedPnl - +(f.fee || 0)}));
+  (Array.isArray(S.data.fund) ? S.data.fund : []).filter((x) => +x.time >= sinceTs).forEach((x) => ev.push({t: +x.time, v: +(x.delta?.usdc || 0)}));
+  return ev.filter((e) => isFinite(e.v)).sort((a, b) => a.t - b.t);
+}
+function botSeries(period) {
+  const now = Date.now(), si = sinceInfo(), ev = botEvents(si.ts);
+  const span = {day: 864e5, week: 7 * 864e5, month: 30 * 864e5}[period];
+  let w0 = span ? Math.max(si.ts, now - span) : si.ts;
+  if (!w0) w0 = ev.length ? ev[0].t - 36e5 : now - 864e5;
+  let cum = 0; const pts = [];
+  ev.forEach((e) => { cum += e.v; if (e.t >= w0) pts.push({t: e.t, v: cum}); });
+  const before = ev.filter((e) => e.t < w0).reduce((a, e) => a + e.v, 0);
+  const upnl = S.acct ? S.acct.upnl : 0;
+  const series = [{t: w0, v: 0}, ...pts.map((p) => ({t: p.t, v: p.v - before})), {t: now, v: cum - before + upnl}];
+  return series;
 }
 function pnlFor(period) {
-  const P = S.data.port; if (!Array.isArray(P)) return null;
-  const d = Object.fromEntries(P)[period]; const h = d?.pnlHistory || [];
-  return h.length ? +h[h.length - 1][1] - +h[0][1] : null;
+  if (!S.data.ready) return null;
+  const s = botSeries(period); return s[s.length - 1].v - s[0].v;
 }
 
 /* ---------- rendering ---------- */
@@ -453,10 +479,10 @@ function render() {
   $("#story").textContent = A.equity <= 0
     ? "Il conto è vuoto: deposita USDC su Hyperliquid e il bot inizierà a seguire la strategia."
     : parts.join(" · ") + ".";
-  const all = pnlFor("allTime"), day = pnlFor("day");
+  const all = pnlFor("allTime"), day = pnlFor("day"), si = sinceInfo();
   $("#heroSide").innerHTML = `
     <div>Oggi <b class="num ${tone(day)}">${day == null ? "—" : signed(day) + " $"}</b></div>
-    <div>Da sempre <b class="num ${tone(all)}">${all == null ? "—" : signed(all) + " $"}</b></div>
+    <div title="Risultato del bot: operazioni, commissioni, funding e PnL aperto. Versamenti e acquisti spot esclusi.">${si.short} <b class="num ${tone(all)}">${all == null ? "—" : signed(all) + " $"}</b></div>
     <div>Capitale del bot <b class="num">${fmt(A.botCapital)} $</b></div>
     <div>Conto <b>${A.unified ? "Unified" : "Standard"}</b></div>`;
   $("#diag").textContent = diagnostics(A);
@@ -511,12 +537,14 @@ function renderMarket(A) {
 
 function coinName(c) { return c && c[0] === "@" ? (spotPrices().pairName[c] || c + " spot") : /\//.test(c || "") ? niceToken(c.split("/")[0]) + " spot" : c; }
 function renderFills() {
-  const F = (S.data.fills || []).slice(0, 12);
-  const all = S.data.fills || [];
+  const si = sinceInfo(), every = S.data.fills || [];
+  const all = every.filter((f) => +f.time >= si.ts), hidden = every.length - all.length;
+  const F = all.slice(0, 12);
   const realized = all.reduce((a, f) => a + +f.closedPnl, 0), fees = all.reduce((a, f) => a + +(f.fee || 0), 0);
   $("#fillsSub").textContent = all.length
-    ? `Realizzato ${signed(realized)} $ · commissioni ${fmt(fees)} $ su ${all.length} esecuzioni`
-    : "Ancora nessuna operazione su questo conto.";
+    ? `${si.label[0].toUpperCase() + si.label.slice(1)} · realizzato ${signed(realized)} $ · commissioni ${fmt(fees)} $ su ${all.length} esecuzioni` +
+      (hidden > 0 ? ` · ${hidden} più vecchie nascoste (Impostazioni → Storia da mostrare)` : "")
+    : `Nessuna operazione ${si.label}.` + (hidden > 0 ? ` ${hidden} più vecchie nascoste.` : "");
   if (!F.length) { $("#fills").innerHTML = ""; return; }
   const dirIt = (d) => ({"Open Long": "Apre long", "Close Long": "Chiude long", "Open Short": "Apre short", "Close Short": "Chiude short"}[d] || d);
   $("#fills").innerHTML = `<thead><tr><th>Quando</th><th>Asset</th><th>Operazione</th><th class="n">Prezzo</th><th class="n">Quantità</th><th class="n">Risultato</th></tr></thead><tbody>` +
@@ -572,11 +600,11 @@ function lineChart(el, pts, opts = {}) {
 
 function renderCharts() {
   if (!S.data.ready) return;
-  const series = portfolioSeries(S.period);
-  lineChart($("#eqChart"), series, {label: "Valore del conto nel tempo", empty: "Lo storico comparirà dopo qualche ora di attività del conto."});
+  const series = botSeries(S.period);
+  lineChart($("#eqChart"), series, {label: "Risultato del bot nel tempo", refs: [0], color: cssVar(series[series.length - 1].v < -0.005 ? "--loss" : series[series.length - 1].v > 0.005 ? "--gain" : "--ink2"), empty: "Il grafico parte con la prima operazione del bot."});
   const pnl = pnlFor(S.period);
-  const names = {day: "nelle ultime 24 ore", week: "in una settimana", month: "in un mese", allTime: "da sempre"};
-  $("#pnlLine").innerHTML = pnl == null ? "—" : `Risultato ${names[S.period]}: <b class="num ${tone(pnl)}">${signed(pnl)} $</b>`;
+  const names = {day: "nelle ultime 24 ore", week: "in 7 giorni", month: "in 30 giorni", allTime: sinceInfo().label};
+  $("#pnlLine").innerHTML = pnl == null ? "—" : `Risultato ${names[S.period]}: <b class="num ${tone(pnl)}">${signed(pnl)} $</b> · senza versamenti né acquisti spot`;
   // fear & greed
   const F = S.data.fng;
   const g = $("#fng svg");
@@ -617,11 +645,11 @@ $("#setupForm").addEventListener("submit", (e) => {
   S.addr = a; S.net = $("#netIn").value; store.set("addr", a); store.set("net", S.net); start();
 });
 $("#refreshBtn").addEventListener("click", () => S.addr && load());
-$("#settingsBtn").addEventListener("click", () => { $("#addrSet").value = S.addr; $("#netSet").value = S.net; $("#modeSet").value = S.mode; $("#settings").showModal(); });
+$("#settingsBtn").addEventListener("click", () => { $("#addrSet").value = S.addr; $("#netSet").value = S.net; $("#modeSet").value = S.mode; $("#sinceSet").value = S.since; $("#settings").showModal(); });
 $("#closeSet").addEventListener("click", () => $("#settings").close());
 $("#saveSet").addEventListener("click", () => {
   const a = $("#addrSet").value.trim(); if (!validAddr(a)) { $("#addrSet").focus(); return; }
-  S.addr = a; S.net = $("#netSet").value; S.mode = $("#modeSet").value; store.set("addr", a); store.set("net", S.net); store.set("mode", S.mode);
+  S.addr = a; S.net = $("#netSet").value; S.mode = $("#modeSet").value; S.since = $("#sinceSet").value; store.set("since", S.since); store.set("addr", a); store.set("net", S.net); store.set("mode", S.mode);
   $("#settings").close(); start();
 });
 $("#forgetSet").addEventListener("click", () => { store.del("addr"); location.hash = ""; location.reload(); });
@@ -633,6 +661,7 @@ applyTheme(store.get("theme", ""));
 const fromHash = decodeURIComponent(location.hash.slice(1));
 S.addr = validAddr(fromHash) ? fromHash : store.get("addr", "");
 S.net = store.get("net", "mainnet"); S.mode = store.get("mode", "auto"); S.lev = +store.get("lev", "1") || 1; S.period = store.get("period", "month");
+S.since = store.get("since", "bot");
 if (validAddr(S.addr)) { store.set("addr", S.addr); start(); } else { $("#setupView").hidden = false; setNetChip(); }
 </script>
 </body>
